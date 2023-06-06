@@ -127,6 +127,8 @@ func main() {
 	var env = []string{
 		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 	}
+	var mounts []string
+
 	cmd = &cobra.Command{
 		Use:   "run PACKAGE.tar.gz -- [CMD]",
 		Short: "run a container from a PACKAGE.tar.gz",
@@ -350,6 +352,24 @@ func main() {
 				panic(fmt.Errorf("mount /run: %w", err))
 			}
 
+			for _, m := range mounts {
+				mm := strings.Split(m, ":")
+				if len(mm) != 2 {
+					panic(fmt.Errorf("invalid mount %q", m))
+				}
+
+				err = os.MkdirAll("/tmp/newroot/"+mm[1], 0755)
+				if err != nil {
+					panic(err)
+				}
+
+				err = syscall.Mount(mm[0], "/tmp/newroot/"+mm[1], "", syscall.MS_BIND, "")
+				if err != nil {
+					panic(fmt.Errorf("mount %q: %w", m, err))
+				}
+
+			}
+
 			err = syscall.Chroot("/tmp/newroot/")
 			if err != nil {
 				panic(err)
@@ -363,6 +383,7 @@ func main() {
 
 	cmd.Flags().StringVarP(&verify, "verify", "i", "", "verify signature by identity")
 	cmd.Flags().StringArrayVarP(&env, "env", "e", env, "set environment variables")
+	cmd.Flags().StringArrayVarP(&mounts, "volume", "v", mounts, "bind mount, weirdly named for docker compatibility")
 
 	rootCmd.AddCommand(cmd)
 
