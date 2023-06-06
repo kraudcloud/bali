@@ -14,7 +14,7 @@ Great for deploying your own system daemons, not so much for running random dock
 
 	echo from:alpine > Dockerfile
 	bali build alpine.tar .
-	bali run -e HELLO="im on a boat" -t ./alpine.tar -- /bin/busybox sh -c 'echo $HELLO'
+	sudo bali run -e HELLO="im on a boat" ./alpine.tar -- /bin/busybox sh -c 'echo $HELLO'
 
 ### signed distribution
 
@@ -26,12 +26,29 @@ check your own id with
 
 verify a package is built by an id
 
-	bali verify alpine.tar.gz cDFJ6F4W6XT2WGTLTJTDQAPE4GYXX2VVLSV43KWENB7W76FA57XAGZQA
+	bali verify alpine.tar.gz cDFJ6F4W6XEXAMPLE
 
 
 verify before running stuff from the interwebs
 
-	bali run -i cDFJ6F4W6XT2WGTLTJTDQAPE4GYXX2VVLSV43KWENB7W76FA57XAGZQA https://example.com/alpine.tar.gz
+	bali run -i cDFJ6F4W6XEXAMPLE https://example.com/alpine.tar.gz
+
+
+### repositories
+
+
+bali can fetch tarballs from http/s and sftp (scp)
+it does intentionally not provide a way to `push` an image
+
+to run a testing sftp server:
+
+	docker run -d -p 2222:22  emberstack/sftp
+	scp -P 2222  alpine.tar.gz  demo@localhost:/sftp/alpine.tar.gz
+	# password is demo
+
+	bali run -i $(bali id) scp://demo:demo@localhost:2222/sftp/alpine.tar.gz
+
+
 
 
 ### installing from source:

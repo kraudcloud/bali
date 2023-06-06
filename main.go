@@ -5,15 +5,19 @@ import (
 	"crypto/sha512"
 	"fmt"
 	ik "github.com/devguardio/identity/go"
+	"github.com/pkg/sftp"
 	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
+	"golang.org/x/crypto/ssh"
 	"io"
 	"io/ioutil"
 	"math/rand"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
+	"os/user"
 	"runtime"
 	"strings"
 	"syscall"
@@ -86,12 +90,12 @@ func main() {
 				panic(err)
 			}
 
-			fmt.Printf("hash: %x\n", sum)
-			fmt.Printf("sig: %s\n", sig.String())
-
 			ofz.Write([]byte{0, 0, 0, 0, 0, 0, 0, 0})
 			ofz.Write([]byte{'i', 'k', 's', 'i', 'g', 0, 0, 0})
 			ofz.Write(sig[:])
+
+			fmt.Printf("built and signed: %s\n", args[0])
+
 		},
 	}
 	rootCmd.AddCommand(cmd)
@@ -189,6 +193,89 @@ func main() {
 					panic(err)
 				}
 
+			} else if u.Scheme == "sftp" || u.Scheme == "scp" || u.Scheme == "ssh" {
+
+				config := &ssh.ClientConfig{
+					Auth: []ssh.AuthMethod{},
+
+					//file is signed anyway
+					HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+				}
+
+				dirname, err := os.UserHomeDir()
+				if err == nil {
+					key, err := os.ReadFile(dirname + "/.ssh/id_rsa")
+					if err == nil {
+						signer, err := ssh.ParsePrivateKey(key)
+						if err == nil {
+							config.Auth = append(config.Auth, ssh.PublicKeys(signer))
+						}
+					}
+				}
+
+				if u.User != nil {
+					config.User = u.User.Username()
+					if p, ok := u.User.Password(); ok {
+						config.Auth = append(config.Auth, ssh.Password(p))
+					}
+				} else {
+
+					user, err := user.Current()
+					if err != nil {
+						panic(err)
+					}
+					config.User = user.Username
+				}
+
+				_, port, _ := net.SplitHostPort(u.Host)
+				if port == "" {
+					u.Host += ":22"
+				}
+
+				conn, err := ssh.Dial("tcp", u.Host, config)
+				if err != nil {
+					panic(err)
+				}
+
+				client, err := sftp.NewClient(conn)
+				if err != nil {
+					panic(err)
+				}
+				defer client.Close()
+
+				stat, err := client.Stat(u.Path)
+				if err != nil {
+					panic(err)
+				}
+
+				ri, err := client.Open(u.Path)
+				if err != nil {
+					panic(err)
+				}
+				defer ri.Close()
+
+				ii, err = ioutil.TempFile("", "bali-download")
+				if err != nil {
+					panic(err)
+				}
+				defer os.Remove(ii.Name())
+
+				bar := progressbar.DefaultBytes(
+					stat.Size(),
+					"downloading",
+				)
+
+				_, err = io.Copy(io.MultiWriter(ii, bar), ri)
+				if err != nil {
+					panic(err)
+				}
+				ii.Close()
+
+				ii, err = os.Open(ii.Name())
+				if err != nil {
+					panic(err)
+				}
+
 			} else {
 				panic("unknown scheme " + u.Scheme)
 			}
@@ -199,6 +286,8 @@ func main() {
 					panic(err)
 				}
 				ii.Seek(0, 0)
+
+				fmt.Fprintf(os.Stderr, "verified\n\n")
 			}
 
 			// peek to check if its gzip

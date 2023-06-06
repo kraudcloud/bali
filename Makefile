@@ -18,12 +18,9 @@ deb: bali
 		--maintainer "Arvid E. Picciani <aep@exys.org>" \
 		bali=/usr/bin/bali
 
-
-release:
+release: deb
 	cp bali-$(VERSION)-amd64.deb ../dpkg/deb/
 	cd ../dpkg && ./push.sh
-
-
 
 
 .PHONY:

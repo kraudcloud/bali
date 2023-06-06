@@ -4,6 +4,7 @@ go 1.20
 
 require (
 	github.com/devguardio/identity/go v0.0.0-20230606081221-60af40a194bc
+	github.com/pkg/sftp v1.13.5
 	github.com/pkg/xattr v0.4.9
 	github.com/schollz/progressbar/v3 v3.13.1
 	github.com/spf13/cobra v1.7.0
@@ -12,6 +13,7 @@ require (
 require (
 	github.com/go-daq/crc8 v0.0.0-20170116120732-380c22547098 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/kr/fs v0.1.0 // indirect
 	github.com/mattn/go-runewidth v0.0.14 // indirect
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
 	github.com/oasisprotocol/curve25519-voi v0.0.0-20230110094441-db37f07504ce // indirect
