@@ -2,7 +2,7 @@ VERSION = $(shell git describe --tags --always --dirty)
 
 bali: .PHONY
 
-	go build .
+	CGO_ENABLED=0 go build .
 
 deb: bali
 	fpm \
@@ -19,6 +19,9 @@ deb: bali
 		bali=/usr/bin/bali
 
 
+release:
+	cp bali-$(VERSION)-amd64.deb ../dpkg/deb/
+	cd ../dpkg && ./push.sh
 
 
 
