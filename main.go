@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -363,14 +364,35 @@ func main() {
 					panic(fmt.Errorf("invalid mount %q", m))
 				}
 
-				err = os.MkdirAll("/tmp/newroot/"+mm[1], 0755)
+				stat, err := os.Stat(mm[0])
 				if err != nil {
 					panic(err)
 				}
 
-				err = syscall.Mount(mm[0], "/tmp/newroot/"+mm[1], "", syscall.MS_BIND, "")
-				if err != nil {
-					panic(fmt.Errorf("mount %q: %w", m, err))
+				if stat.IsDir() {
+					err = os.MkdirAll("/tmp/newroot/"+mm[1], 0755)
+					if err != nil {
+						panic(err)
+					}
+
+					err = syscall.Mount(mm[0], "/tmp/newroot/"+mm[1], "", syscall.MS_BIND, "")
+					if err != nil {
+						panic(fmt.Errorf("mount %q: %w", m, err))
+					}
+				} else {
+					parent := filepath.Dir(mm[1])
+					err = os.MkdirAll("/tmp/newroot/"+parent, 0755)
+
+					f, err := os.Create("/tmp/newroot/" + mm[1])
+					if err != nil {
+						panic(err)
+					}
+					f.Close()
+
+					err = syscall.Mount(mm[0], "/tmp/newroot/"+mm[1], "", syscall.MS_BIND, "")
+					if err != nil {
+						panic(fmt.Errorf("mount %q: %w", m, err))
+					}
 				}
 
 			}
