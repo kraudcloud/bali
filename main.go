@@ -311,6 +311,11 @@ func main() {
 				panic(err)
 			}
 
+			err = syscall.Mount("tmpfs", "/tmp/newroot", "tmpfs", 0, "")
+			if err != nil {
+				panic(err)
+			}
+
 			err = untar(ir, "/tmp/newroot/")
 			if err != nil {
 				panic(err)
