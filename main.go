@@ -397,6 +397,12 @@ func main() {
 
 			}
 
+			for i, e := range env {
+				if !strings.Contains(e, "=") {
+					env[i] = e + "=" + os.Getenv(e)
+				}
+			}
+
 			err = syscall.Chroot("/tmp/newroot/")
 			if err != nil {
 				panic(err)
