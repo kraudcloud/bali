@@ -4,7 +4,9 @@ import (
 	"compress/gzip"
 	"crypto/sha512"
 	"fmt"
+	"github.com/containerd/cgroups/v2/cgroup2"
 	ik "github.com/devguardio/identity/go"
+	"github.com/dustin/go-humanize"
 	"github.com/pkg/sftp"
 	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
@@ -124,8 +126,7 @@ func main() {
 	}
 	rootCmd.AddCommand(cmd)
 
-	var systemd string
-	var systemdProperty []string
+	var mem string
 	var verify string
 	var env = []string{
 		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
@@ -138,32 +139,43 @@ func main() {
 		Args:  cobra.MinimumNArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
 
-			// re-exec with systemd-run
-			if systemd != "" {
-
-				args := []string{
-					"/usr/bin/systemd-run",
-					"--pty", "--collect", "--service-type=exec",
-					"--unit", systemd,
-				}
-				for _, p := range systemdProperty {
-					args = append(args, "--property", p)
-				}
-				args = append(args, "--")
-				for i := 0; i < len(os.Args); i++ {
-					if os.Args[i] == "--systemd" || os.Args[i] == "-s" {
-						i++
-					} else {
-						args = append(args, os.Args[i])
-					}
-				}
-
-				err := syscall.Exec(args[0], args[0:], os.Environ())
-				panic(fmt.Errorf("exec failed: %w", err))
-			}
+			exit := 0
+			defer func() {
+				os.Exit(exit)
+			}()
 
 			runtime.LockOSThread()
 			defer runtime.UnlockOSThread()
+
+			var cg *cgroup2.Manager
+
+			if mem != "" {
+
+				membytes, err := humanize.ParseBytes(mem)
+				if err != nil {
+					panic(fmt.Errorf("invalid memory limit: %s", err))
+				}
+
+				membytesI := int64(membytes)
+
+				res := cgroup2.Resources{
+					Memory: &cgroup2.Memory{
+						Max: &membytesI,
+					},
+				}
+
+				cg, err = cgroup2.NewSystemd("/", fmt.Sprintf("bali-%d.slice", os.Getpid()), -1, &res)
+				if err != nil {
+					panic(err)
+				}
+
+				defer func() {
+					err := cg.Delete()
+					if err != nil {
+						panic(err)
+					}
+				}()
+			}
 
 			err := syscall.Unshare(syscall.CLONE_NEWNS)
 			if err != nil {
@@ -387,6 +399,12 @@ func main() {
 				panic(fmt.Errorf("mount /sys: %w", err))
 			}
 
+			os.MkdirAll("/tmp/newroot/sys/fs/cgroup", 0755)
+			err = syscall.Mount("cgroup2", "/tmp/newroot/sys/fs/cgroup", "cgroup2", 0, "")
+			if err != nil {
+				panic(fmt.Errorf("mount /sys/fs/cgroup: %w", err))
+			}
+
 			os.MkdirAll("/tmp/newroot/dev", 0755)
 			err = syscall.Mount("devtmpfs", "/tmp/newroot/dev", "devtmpfs", 0, "")
 			if err != nil {
@@ -456,22 +474,37 @@ func main() {
 				}
 			}
 
-			err = syscall.Chroot("/tmp/newroot/")
+			cc := exec.Command(args[1], args[2:]...)
+			cc.Env = env
+			cc.Stdin = os.Stdin
+			cc.Stdout = os.Stdout
+			cc.Stderr = os.Stderr
+			cc.SysProcAttr = &syscall.SysProcAttr{
+				Chroot: "/tmp/newroot/",
+			}
+
+			err = cc.Start()
 			if err != nil {
 				panic(err)
 			}
 
-			err = syscall.Exec(args[1], args[1:], env)
-			panic(fmt.Errorf("exec failed: %w", err))
+			if cg != nil {
+				err = cg.AddProc(uint64(cc.Process.Pid))
+				if err != nil {
+					panic(err)
+				}
+			}
 
+			cc.Wait()
+
+			exit = cc.ProcessState.ExitCode()
 		},
 	}
 
 	cmd.Flags().StringVarP(&verify, "verify", "i", "", "verify signature by identity")
 	cmd.Flags().StringArrayVarP(&env, "env", "e", env, "set environment variables")
 	cmd.Flags().StringArrayVarP(&mounts, "volume", "v", mounts, "bind mount, weirdly named for docker compatibility")
-	cmd.Flags().StringVarP(&systemd, "systemd", "s", "", "run as transient systemd service with name")
-	cmd.Flags().StringArrayVarP(&systemdProperty, "property", "p", systemdProperty, "set systemd properties (see man systemd-run)")
+	cmd.Flags().StringVarP(&mem, "mem", "m", "", "memory limit")
 
 	rootCmd.AddCommand(cmd)
 
