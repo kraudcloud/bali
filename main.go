@@ -124,6 +124,8 @@ func main() {
 	}
 	rootCmd.AddCommand(cmd)
 
+	var systemd string
+	var systemdProperty []string
 	var verify string
 	var env = []string{
 		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
@@ -135,6 +137,30 @@ func main() {
 		Short: "run a container from a PACKAGE.tar.gz",
 		Args:  cobra.MinimumNArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
+
+			// re-exec with systemd-run
+			if systemd != "" {
+
+				args := []string{
+					"/usr/sbin/systemd-run",
+					"--pty", "--collect", "--service-type=exec",
+					"--unit", systemd,
+				}
+				for _, p := range systemdProperty {
+					args = append(args, "--property", p)
+				}
+				args = append(args, "--")
+				for i := 0; i < len(os.Args); i++ {
+					if os.Args[i] == "--systemd" || os.Args[i] == "-s" {
+						i++
+					} else {
+						args = append(args, os.Args[i])
+					}
+				}
+
+				err := syscall.Exec(args[0], args[0:], os.Environ())
+				panic(fmt.Errorf("exec failed: %w", err))
+			}
 
 			runtime.LockOSThread()
 			defer runtime.UnlockOSThread()
@@ -317,6 +343,33 @@ func main() {
 				panic(err)
 			}
 
+			// copy some stuff from the host _before_ the extraction.
+			// this is inconsistent with docker
+
+			// copy /etc/resolv.conf
+			err = os.Mkdir("/tmp/newroot/etc", 0755)
+			if err != nil {
+				panic(err)
+			}
+
+			f, err := os.Open("/etc/resolv.conf")
+			if err != nil {
+				panic(err)
+			}
+
+			fo, err := os.Create("/tmp/newroot/etc/resolv.conf")
+			if err != nil {
+				panic(err)
+			}
+
+			_, err = io.Copy(fo, f)
+			if err != nil {
+				panic(err)
+			}
+
+			f.Close()
+			fo.Close()
+
 			err = untar(ir, "/tmp/newroot/")
 			if err != nil {
 				panic(err)
@@ -375,7 +428,7 @@ func main() {
 						panic(err)
 					}
 
-					err = syscall.Mount(mm[0], "/tmp/newroot/"+mm[1], "", syscall.MS_BIND | syscall.MS_REC, "")
+					err = syscall.Mount(mm[0], "/tmp/newroot/"+mm[1], "", syscall.MS_BIND|syscall.MS_REC, "")
 					if err != nil {
 						panic(fmt.Errorf("mount %q: %w", m, err))
 					}
@@ -417,6 +470,8 @@ func main() {
 	cmd.Flags().StringVarP(&verify, "verify", "i", "", "verify signature by identity")
 	cmd.Flags().StringArrayVarP(&env, "env", "e", env, "set environment variables")
 	cmd.Flags().StringArrayVarP(&mounts, "volume", "v", mounts, "bind mount, weirdly named for docker compatibility")
+	cmd.Flags().StringVarP(&systemd, "systemd", "s", "", "run as transient systemd service with name")
+	cmd.Flags().StringArrayVarP(&systemdProperty, "property", "p", systemdProperty, "set systemd properties (see man systemd-run)")
 
 	rootCmd.AddCommand(cmd)
 
