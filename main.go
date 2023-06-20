@@ -375,7 +375,7 @@ func main() {
 						panic(err)
 					}
 
-					err = syscall.Mount(mm[0], "/tmp/newroot/"+mm[1], "", syscall.MS_BIND, "")
+					err = syscall.Mount(mm[0], "/tmp/newroot/"+mm[1], "", syscall.MS_BIND | syscall.MS_REC, "")
 					if err != nil {
 						panic(fmt.Errorf("mount %q: %w", m, err))
 					}
