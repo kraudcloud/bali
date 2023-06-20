@@ -142,7 +142,7 @@ func main() {
 			if systemd != "" {
 
 				args := []string{
-					"/usr/sbin/systemd-run",
+					"/usr/bin/systemd-run",
 					"--pty", "--collect", "--service-type=exec",
 					"--unit", systemd,
 				}
