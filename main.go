@@ -141,7 +141,11 @@ func main() {
 
 			exit := 0
 			defer func() {
-				os.Exit(exit)
+				if r := recover(); r != nil {
+					panic(r)
+				} else {
+					os.Exit(exit)
+				}
 			}()
 
 			runtime.LockOSThread()
