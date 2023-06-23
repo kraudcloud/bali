@@ -139,6 +139,7 @@ func main() {
 		Args:  cobra.MinimumNArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
 
+
 			exit := 0
 			defer func() {
 				if r := recover(); r != nil {
@@ -150,6 +151,13 @@ func main() {
 
 			runtime.LockOSThread()
 			defer runtime.UnlockOSThread()
+
+
+
+			// we must reset our own oom_score_adj to 0, because nomad sets it to -1000
+			os.WriteFile("/proc/self/oom_score_adj", []byte("0"), 0644)
+
+
 
 			var cg *cgroup2.Manager
 
