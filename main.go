@@ -152,12 +152,8 @@ func main() {
 			runtime.LockOSThread()
 			defer runtime.UnlockOSThread()
 
-
-
 			// we must reset our own oom_score_adj to 0, because nomad sets it to -1000
 			os.WriteFile("/proc/self/oom_score_adj", []byte("0"), 0644)
-
-
 
 			var cg *cgroup2.Manager
 
@@ -458,7 +454,7 @@ func main() {
 						panic(err)
 					}
 
-					err = syscall.Mount(mm[0], "/tmp/newroot/"+mm[1], "", syscall.MS_BIND|syscall.MS_REC, "")
+					err = syscall.Mount(mm[0], "/tmp/newroot/"+mm[1], "", syscall.MS_BIND|syscall.MS_REC|syscall.MS_SHARED, "")
 					if err != nil {
 						panic(fmt.Errorf("mount %q: %w", m, err))
 					}
