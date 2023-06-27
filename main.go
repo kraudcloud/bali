@@ -395,6 +395,8 @@ func main() {
 				panic(err)
 			}
 
+			ii.Close()
+
 			os.MkdirAll("/tmp/newroot/proc", 0755)
 			err = syscall.Mount("proc", "/tmp/newroot/proc", "proc", 0, "")
 			if err != nil {
