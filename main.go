@@ -149,56 +149,8 @@ func main() {
 				}
 			}()
 
-			runtime.LockOSThread()
-			defer runtime.UnlockOSThread()
-
 			// we must reset our own oom_score_adj to 0, because nomad sets it to -1000
 			os.WriteFile("/proc/self/oom_score_adj", []byte("0"), 0644)
-
-			var cg *cgroup2.Manager
-
-			if mem != "" {
-
-				membytes, err := humanize.ParseBytes(mem)
-				if err != nil {
-					panic(fmt.Errorf("invalid memory limit: %s", err))
-				}
-
-				membytesI := int64(membytes)
-
-				res := cgroup2.Resources{
-					Memory: &cgroup2.Memory{
-						Max: &membytesI,
-					},
-				}
-
-				cg, err = cgroup2.NewSystemd("/", fmt.Sprintf("bali-%d.slice", os.Getpid()), -1, &res)
-				if err != nil {
-					panic(err)
-				}
-
-				defer func() {
-					err := cg.Delete()
-					if err != nil {
-						panic(err)
-					}
-				}()
-			}
-
-			err := syscall.Unshare(syscall.CLONE_NEWNS)
-			if err != nil {
-				panic(err)
-			}
-
-			err = syscall.Mount("none", "/", "", syscall.MS_REC|syscall.MS_PRIVATE, "")
-			if err != nil {
-				panic(err)
-			}
-
-			err = syscall.Mount("tmpfs", "/tmp", "tmpfs", 0, "")
-			if err != nil {
-				panic(err)
-			}
 
 			u, err := url.Parse(args[0])
 			if err != nil {
@@ -338,6 +290,56 @@ func main() {
 
 				fmt.Fprintf(os.Stderr, "verified\n\n")
 			}
+
+			runtime.LockOSThread()
+			defer runtime.UnlockOSThread()
+
+
+			var cg *cgroup2.Manager
+
+			if mem != "" {
+
+				membytes, err := humanize.ParseBytes(mem)
+				if err != nil {
+					panic(fmt.Errorf("invalid memory limit: %s", err))
+				}
+
+				membytesI := int64(membytes)
+
+				res := cgroup2.Resources{
+					Memory: &cgroup2.Memory{
+						Max: &membytesI,
+					},
+				}
+
+				cg, err = cgroup2.NewSystemd("/", fmt.Sprintf("bali-%d.slice", os.Getpid()), -1, &res)
+				if err != nil {
+					panic(err)
+				}
+
+				defer func() {
+					err := cg.Delete()
+					if err != nil {
+						panic(err)
+					}
+				}()
+			}
+
+			err = syscall.Unshare(syscall.CLONE_NEWNS)
+			if err != nil {
+				panic(err)
+			}
+
+			err = syscall.Mount("none", "/", "", syscall.MS_REC|syscall.MS_PRIVATE, "")
+			if err != nil {
+				panic(err)
+			}
+
+			err = syscall.Mount("tmpfs", "/tmp", "tmpfs", 0, "")
+			if err != nil {
+				panic(err)
+			}
+
 
 			// peek to check if its gzip
 			peek := make([]byte, 2)
