@@ -11,6 +11,7 @@ import (
 	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/sys/unix"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -19,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/signal"
 	"os/user"
 	"path/filepath"
 	"runtime"
@@ -131,14 +133,16 @@ func main() {
 	var env = []string{
 		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 	}
+
 	var mounts []string
+	var precmd []string
+	var postcmd []string
 
 	cmd = &cobra.Command{
 		Use:   "run PACKAGE.tar.gz -- [CMD]",
 		Short: "run a container from a PACKAGE.tar.gz",
 		Args:  cobra.MinimumNArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
-
 
 			exit := 0
 			defer func() {
@@ -294,7 +298,6 @@ func main() {
 			runtime.LockOSThread()
 			defer runtime.UnlockOSThread()
 
-
 			var cg *cgroup2.Manager
 
 			if mem != "" {
@@ -325,6 +328,38 @@ func main() {
 				}()
 			}
 
+			for _, cmd := range precmd {
+				cc := exec.Command("sh", "-c", cmd)
+				cc.Stdin = os.Stdin
+				cc.Stdout = os.Stdout
+				cc.Stderr = os.Stderr
+				err := cc.Run()
+				if err != nil {
+					panic(err)
+				}
+			}
+
+			hostns, err := unix.Open(fmt.Sprintf("/proc/%d/ns/mnt", os.Getpid()), unix.O_RDONLY|unix.O_CLOEXEC, 0)
+			if err != nil {
+				panic(err)
+			}
+			defer unix.Close(hostns)
+
+			defer func() {
+				err := unix.Setns(hostns, syscall.CLONE_NEWNS)
+				if err != nil {
+					panic(err)
+				}
+
+				for _, cmd := range postcmd {
+					cc := exec.Command("sh", "-c", cmd)
+					cc.Stdin = os.Stdin
+					cc.Stdout = os.Stdout
+					cc.Stderr = os.Stderr
+					cc.Run()
+				}
+			}()
+
 			err = syscall.Unshare(syscall.CLONE_NEWNS)
 			if err != nil {
 				panic(err)
@@ -339,7 +374,6 @@ func main() {
 			if err != nil {
 				panic(err)
 			}
-
 
 			// peek to check if its gzip
 			peek := make([]byte, 2)
@@ -486,6 +520,17 @@ func main() {
 				}
 			}
 
+			sigc := make(chan os.Signal, 1)
+			signal.Notify(sigc,
+				syscall.SIGTERM,
+				syscall.SIGINT,
+				syscall.SIGQUIT,
+				syscall.SIGKILL,
+				syscall.SIGUSR1,
+				syscall.SIGUSR2,
+				syscall.SIGHUP,
+			)
+
 			cc := exec.Command(args[1], args[2:]...)
 			cc.Env = env
 			cc.Stdin = os.Stdin
@@ -507,6 +552,13 @@ func main() {
 				}
 			}
 
+			go func() {
+				for {
+					s := <-sigc
+					cc.Process.Signal(s)
+				}
+			}()
+
 			cc.Wait()
 
 			exit = cc.ProcessState.ExitCode()
@@ -517,6 +569,9 @@ func main() {
 	cmd.Flags().StringArrayVarP(&env, "env", "e", env, "set environment variables")
 	cmd.Flags().StringArrayVarP(&mounts, "volume", "v", mounts, "bind mount, weirdly named for docker compatibility")
 	cmd.Flags().StringVarP(&mem, "mem", "m", "", "memory limit")
+
+	cmd.Flags().StringArrayVar(&precmd, "precmd", precmd, "execute shell string prior to entering ns. workaround for nfs kernel bug")
+	cmd.Flags().StringArrayVar(&postcmd, "postcmd", postcmd, "execute shell string after cleanup on host. workaround for nfs kernel bug")
 
 	rootCmd.AddCommand(cmd)
 
